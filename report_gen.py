@@ -111,10 +111,14 @@ class AsanaAPI:
             if task.get("completed", False):
                 continue
 
-            assignee_name = task.get("assignee", {}).get("name", "Unassigned")
+            # Ensure "assignee" key exists and is not None
+            assignee = task.get("assignee") or {}
+            assignee_name = assignee.get("name", "Unassigned")  # Default to "Unassigned"
+
             assignee_counts[assignee_name] = assignee_counts.get(assignee_name, 0) + 1
 
         return sorted(assignee_counts.items(), key=lambda x: x[1], reverse=True)
+
 
 
 def main():
