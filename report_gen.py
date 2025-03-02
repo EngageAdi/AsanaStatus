@@ -3,7 +3,6 @@ import requests
 import json
 import datetime
 
-
 BASE_URL = "https://app.asana.com/api/1.0"
 
 
@@ -12,8 +11,8 @@ class AsanaAPI:
         """Initialize Asana API with environment variables"""
         self.token = os.getenv("ASANA_ACCESS_TOKEN")
         self.section_id = os.getenv("ASANA_SECTION_ID")
-        self.team_name = os.getenv("ASANA_TEAM_NAME", "Engagement")  # Default to "Engagement"
-        self.priority_field = os.getenv("ASANA_PRIORITY_FIELD", "Priority")  # Default to "Priority"
+        self.team_name = os.getenv("ASANA_TEAM_NAME", "Engagement")  # Default: "Engagement"
+        self.priority_field = os.getenv("ASANA_PRIORITY_FIELD", "Priority")  # Default: "Priority"
 
         if not self.token:
             raise ValueError("ASANA_ACCESS_TOKEN is required in environment variables")
@@ -111,56 +110,74 @@ class AsanaAPI:
             if task.get("completed", False):
                 continue
 
-            # Ensure "assignee" key exists and is not None
             assignee = task.get("assignee") or {}
-            assignee_name = assignee.get("name", "Unassigned")  # Default to "Unassigned"
+            assignee_name = assignee.get("name", "Unassigned")  # Default: "Unassigned"
 
             assignee_counts[assignee_name] = assignee_counts.get(assignee_name, 0) + 1
 
         return sorted(assignee_counts.items(), key=lambda x: x[1], reverse=True)
 
 
+def send_slack_message(slack_message):
+    payload = {
+        "channel": os.environ['channel_id'],
+        "text": slack_message
+    }
+    slack_url = os.environ['slack_url']
+    slack_headers = {"Content-Type": "application/json", "Authorization": f"Bearer {os.environ['slack_token']}"}
+
+    response = requests.post(slack_url, headers=slack_headers, json=payload)
+
+    if response.status_code == 200:
+        response_data = response.json()
+        if response_data.get("ok"):
+            print("Message posted successfully!")
+        else:
+            print("Failed to post message:", response_data.get("error"))
+    else:
+        print(f"Request failed with status code {response.status_code}: {response.text}")
 
 def main():
     """Main function to execute the Asana API queries"""
     asana_api = AsanaAPI()
 
-    # Get pending tasks
+    slack_message = ""
+
     try:
         pending_tasks = asana_api.get_pending_tasks()
-        print(f"📌 Number of pending tasks in section: {pending_tasks}")
+        slack_message += f"📌 *Pending Tasks:* {pending_tasks}\n"
     except Exception as e:
-        print(f"Error fetching pending tasks: {e}")
+        slack_message += f"⚠️ Error fetching pending tasks: {e}\n"
 
-    # Get incoming tasks grouped by Priority
     try:
         incoming_priority_tasks = asana_api.get_incoming_tasks_grouped_by_priority()
-        print("📥 Incoming Tasks grouped by Priority:")
+        slack_message += "\n📥 *Incoming Tasks ("+ datetime.datetime.utcnow().strftime("%Y-%m") + ") grouped by Priority:*\n"
         if not incoming_priority_tasks:
-            print("   - 0")
+            slack_message += "   - 0\n"
         else:
             for priority, count in incoming_priority_tasks:
-                print(f"   - {priority}: {count}")
+                slack_message += f"   - {priority}: {count}\n"
     except Exception as e:
-        print(f"Error fetching incoming tasks by priority: {e}")
+        slack_message += f"⚠️ Error fetching incoming tasks by priority: {e}\n"
 
-    # Get tasks grouped by Priority
     try:
         priority_tasks = asana_api.get_tasks_grouped_by_priority()
-        print("🔥 Tasks grouped by Priority:")
+        slack_message += "\n🔥 *Tasks grouped by Priority:*\n"
         for priority, count in priority_tasks.items():
-            print(f"   - {priority}: {count}")
+            slack_message += f"   - {priority}: {count}\n"
     except Exception as e:
-        print(f"Error fetching tasks by priority: {e}")
+        slack_message += f"⚠️ Error fetching tasks by priority: {e}\n"
 
-    # Get tasks grouped by Assignee
     try:
         assignee_tasks = asana_api.get_tasks_grouped_by_assignee()
-        print("👥 Tasks grouped by Assignee:")
+        slack_message += "\n👥 *Tasks grouped by Assignee:*\n"
         for assignee, count in assignee_tasks:
-            print(f"   - {assignee}: {count}")
+            slack_message += f"   - {assignee}: {count}\n"
     except Exception as e:
-        print(f"Error fetching tasks by assignee: {e}")
+        slack_message += f"⚠️ Error fetching tasks by assignee: {e}\n"
+
+    # Send Slack message
+    send_slack_message("*Asana Status* \n\n" + slack_message)
 
 
 if __name__ == "__main__":
