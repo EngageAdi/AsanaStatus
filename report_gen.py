@@ -2,6 +2,7 @@ import os
 import requests
 import json
 import datetime
+from dateutil.relativedelta import relativedelta
 
 BASE_URL = "https://app.asana.com/api/1.0"
 
@@ -33,17 +34,25 @@ class AsanaAPI:
             data = response.json()
             tasks = data.get("data", [])
 
-            # Filter tasks where Team == ASANA_TEAM_NAME
+            # Filter tasks where Team == ASANA_TEAM_NAME and tag != "Not a bug"
             for task in tasks:
+                team_matches = False
+                tag_is_not_bug = False
+                
                 for field in task.get("custom_fields", []):
                     if field.get("name") == "Team" and field.get("display_value") == self.team_name:
-                        all_tasks.append(task)
-                        break
+                        team_matches = True
+                    elif field.get("name") == "tag" and field.get("display_value") != "Not a bug":
+                        tag_is_not_bug = True
+                
+                # Only include task if both conditions are met
+                if team_matches and tag_is_not_bug:
+                    all_tasks.append(task)
 
             # Handle pagination
             next_page = data.get("next_page")
             if next_page:
-                url = f"{BASE_URL}/sections/{self.section_id}/tasks?opt_fields=custom_fields,created_at,completed,assignee.name&offset={next_page['offset']}"
+                url = f"{BASE_URL}/sections/{self.section_id}/tasks?opt_fields=custom_fields,created_at,completed,assignee.name&offset={next_page['offset']}&limit=50"
             else:
                 url = ""
 
@@ -51,13 +60,13 @@ class AsanaAPI:
 
     def get_pending_tasks(self):
         """Fetch the number of incomplete tasks in a section"""
-        url = f"{BASE_URL}/sections/{self.section_id}/tasks?opt_fields=completed,custom_fields,assignee.name,created_at"
+        url = f"{BASE_URL}/sections/{self.section_id}/tasks?limit=50&opt_fields=completed,custom_fields,assignee.name,created_at"
         tasks = self.fetch_tasks_with_pagination(url)
         return sum(1 for task in tasks if not task.get("completed", False))
 
     def get_incoming_tasks_grouped_by_priority(self):
         """Fetch tasks created this month and group them by Priority"""
-        url = f"{BASE_URL}/sections/{self.section_id}/tasks?opt_fields=custom_fields,created_at"
+        url = f"{BASE_URL}/sections/{self.section_id}/tasks?limit=50&opt_fields=custom_fields,created_at"
         tasks = self.fetch_tasks_with_pagination(url)
 
         current_month = datetime.datetime.utcnow().strftime("%Y-%m")
@@ -82,7 +91,7 @@ class AsanaAPI:
 
     def get_tasks_grouped_by_priority(self):
         """Fetch tasks and group them by Priority (ONLY INCOMPLETE TASKS)"""
-        url = f"{BASE_URL}/sections/{self.section_id}/tasks?opt_fields=custom_fields,completed"
+        url = f"{BASE_URL}/sections/{self.section_id}/tasks?limit=50&opt_fields=custom_fields,completed"
         tasks = self.fetch_tasks_with_pagination(url)
 
         priority_counts = {}
@@ -101,7 +110,7 @@ class AsanaAPI:
 
     def get_tasks_grouped_by_assignee(self):
         """Fetch tasks and group them by Assignee (ONLY INCOMPLETE TASKS)"""
-        url = f"{BASE_URL}/sections/{self.section_id}/tasks?opt_fields=custom_fields,assignee.name,completed"
+        url = f"{BASE_URL}/sections/{self.section_id}/tasks?limit=50&opt_fields=custom_fields,created_at,assignee.name,completed"
         tasks = self.fetch_tasks_with_pagination(url)
 
         assignee_counts = {}
